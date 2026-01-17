@@ -12,6 +12,7 @@ import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.Dynamic;
 import com.mojang.serialization.JsonOps;
+
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -79,8 +80,100 @@ public class BookCopy implements ClientModInitializer {
                                                 )
                                         )
                                 )
+                                .then(ClientCommandManager.literal("clipboard")
+                                        .executes(context -> importClipboardBook(context, false))
+                                        .then(ClientCommandManager.argument("sign", BoolArgumentType.bool())
+                                                .executes(context -> importClipboardBook(context, BoolArgumentType.getBool(context, "sign"))))
+                                )
+                                .then(ClientCommandManager.literal("clear")
+                                        .executes(context -> clearBook(context, false))
+                                        .then(ClientCommandManager.argument("sign", BoolArgumentType.bool())
+                                                .executes(context -> importClipboardBook(context, BoolArgumentType.getBool(context, "sign"))))
+                                )
+
                 )));
     }
+
+    private static List<String> splitTextIntoPages(String text, int maxCharsPerPage) {
+        List<String> pages = new ArrayList<>();
+        int start = 0;
+
+        while (start < text.length()) {
+            int end = Math.min(start + maxCharsPerPage, text.length());
+
+            // Try to not break in the middle of a line
+            int lastNewline = text.lastIndexOf('\n', end - 1);
+            if (lastNewline > start) {
+                end = lastNewline + 1; // include the newline
+            }
+
+            pages.add(text.substring(start, end));
+            start = end;
+        }
+
+        return pages;
+    }
+
+    private static int importClipboardBook(CommandContext<FabricClientCommandSource> context, boolean sign) throws CommandSyntaxException {
+        ItemStack book = context.getSource().getPlayer().getMainHandItem();
+
+        // Make sure we're holding a book and quill.
+        if (!book.is(Items.WRITABLE_BOOK)) {
+            throw new SimpleCommandExceptionType(Component.literal("Must hold a book and quill")).create();
+        }
+
+        String clipboardText;
+
+        try {
+            clipboardText = net.minecraft.client.Minecraft.getInstance().keyboardHandler.getClipboard();
+        } catch (Exception e) {
+            BookCopy.LOGGER.error("Failed reading clipboard", e);
+            throw new SimpleCommandExceptionType(Component.literal("Failed reading clipboard")).create();
+        }
+
+        if (clipboardText == null || clipboardText.isEmpty()) {
+            throw new SimpleCommandExceptionType(Component.literal("Clipboard is empty")).create();
+        }
+
+        // Sanitize text from the clipboard
+        clipboardText = clipboardText.replace("\r","");
+        clipboardText = clipboardText.replace("\t","    ");
+
+
+        // Split text into pages
+        List<String> pages = splitTextIntoPages(clipboardText.replace("\r", ""), 256);
+
+        int slot = context.getSource().getPlayer().getInventory().getSelectedSlot();
+        context.getSource().getPlayer().connection.send(
+                new ServerboundEditBookPacket(slot, pages, sign ? Optional.of("Clipboard Book") : Optional.empty())
+        );
+
+        context.getSource().sendFeedback(Component.literal("Imported clipboard into book" + (sign ? " (signed)" : "")));
+        return pages.size();
+    }
+
+    private static int clearBook(CommandContext<FabricClientCommandSource> context, boolean sign) throws CommandSyntaxException {
+        ItemStack book = context.getSource().getPlayer().getMainHandItem();
+
+        // Make sure we're holding a book and quill.
+        if (!book.is(Items.WRITABLE_BOOK)) {
+            throw new SimpleCommandExceptionType(Component.literal("Must hold a book and quill")).create();
+        }
+
+        // Split text into pages
+        List<String> pages = new ArrayList<>();
+
+        int slot = context.getSource().getPlayer().getInventory().getSelectedSlot();
+        context.getSource().getPlayer().connection.send(
+                new ServerboundEditBookPacket(slot, pages, sign ? Optional.of("Empty Book") : Optional.empty())
+        );
+
+        context.getSource().sendFeedback(Component.literal("Cleared book."));
+        return pages.size();
+    }
+
+
+
 
     private static int importBook(CommandContext<FabricClientCommandSource> context, String name, boolean sign) throws CommandSyntaxException {
         ItemStack book = context.getSource().getPlayer()
