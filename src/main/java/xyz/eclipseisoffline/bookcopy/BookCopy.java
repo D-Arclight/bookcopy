@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
+
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -100,13 +101,8 @@ public class BookCopy implements ClientModInitializer {
 
         while (start < text.length()) {
             int end = Math.min(start + maxCharsPerPage, text.length());
-
-            // Try to not break in the middle of a line
             int lastNewline = text.lastIndexOf('\n', end - 1);
-            if (lastNewline > start) {
-                end = lastNewline + 1; // include the newline
-            }
-
+            if (lastNewline > start) end = lastNewline + 1;
             pages.add(text.substring(start, end));
             start = end;
         }
@@ -139,9 +135,8 @@ public class BookCopy implements ClientModInitializer {
         clipboardText = clipboardText.replace("\r","");
         clipboardText = clipboardText.replace("\t","    ");
 
-
         // Split text into pages
-        List<String> pages = splitTextIntoPages(clipboardText.replace("\r", ""), 256);
+        List<String> pages = splitTextIntoPages(clipboardText, 256);
 
         int slot = context.getSource().getPlayer().getInventory().getSelectedSlot();
         context.getSource().getPlayer().connection.send(
