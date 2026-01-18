@@ -166,7 +166,7 @@ public class BookCopy implements ClientModInitializer {
         context.getSource().sendFeedback(Component.literal("Cleared book."));
         return pages.size();
     }
-
+    //test
 
 
 
