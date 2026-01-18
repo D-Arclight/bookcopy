@@ -31,6 +31,8 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
@@ -38,6 +40,8 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FormattedText;
+import net.minecraft.network.chat.Style;
 import net.minecraft.network.protocol.game.ServerboundEditBookPacket;
 import net.minecraft.server.network.Filterable;
 import net.minecraft.world.item.ItemStack;
@@ -95,20 +99,61 @@ public class BookCopy implements ClientModInitializer {
                 )));
     }
 
-    private static List<String> splitTextIntoPages(String text, int maxCharsPerPage) {
-        List<String> pages = new ArrayList<>();
-        int start = 0;
+    private static List<String> splitTextIntoPages(String text) {
+        Minecraft mc = Minecraft.getInstance();
+        Font font = mc.font;
+        int maxLineWidth = 114;    // pixels per line
+        int maxLinesPerPage = 13;  // vertical lines per page
+        int maxCharsPerPage = 256; // UTF-16 per-page limit
 
-        while (start < text.length()) {
-            int end = Math.min(start + maxCharsPerPage, text.length());
-            int lastNewline = text.lastIndexOf('\n', end - 1);
-            if (lastNewline > start) end = lastNewline + 1;
-            pages.add(text.substring(start, end));
-            start = end;
+        List<String> pages = new ArrayList<>();
+        StringBuilder currentPage = new StringBuilder();
+        int lineCount = 0;
+        int charCount = 0;
+
+        String[] rawLines = text.split("\n", -1); // keep empty lines
+
+        for (String rawLine : rawLines) {
+            List<FormattedText> wrappedLines;
+            if (rawLine.isEmpty()) {
+                wrappedLines = List.of(Component.literal(""));
+            } else {
+                wrappedLines = font.getSplitter().splitLines(Component.literal(rawLine), maxLineWidth, Style.EMPTY);
+            }
+
+            for (FormattedText ft : wrappedLines) {
+                String line = ft.getString();
+                int lineLen = line.length() + 1; // include newline
+
+                // If adding this line would overflow, start a new page first
+                boolean wouldOverflow = lineCount + 1 > maxLinesPerPage || charCount + lineLen > maxCharsPerPage;
+                if (wouldOverflow) {
+                    if (currentPage.length() > 0) {
+                        pages.add(currentPage.toString());
+                    }
+                    currentPage = new StringBuilder();
+                    lineCount = 0;
+                    charCount = 0;
+
+                    if (pages.size() >= 50) return pages; // stop at Minecraft book limit
+                }
+
+                // Skip adding the line if it's empty and would start a new page
+                if (line.isEmpty() && currentPage.length() == 0) continue;
+
+                currentPage.append(line).append("\n");
+                lineCount++;
+                charCount += lineLen;
+            }
+        }
+
+        if (currentPage.length() > 0 && pages.size() < 50) {
+            pages.add(currentPage.toString());
         }
 
         return pages;
     }
+
 
     private static int importClipboardBook(CommandContext<FabricClientCommandSource> context, boolean sign) throws CommandSyntaxException {
         ItemStack book = context.getSource().getPlayer().getMainHandItem();
@@ -136,7 +181,7 @@ public class BookCopy implements ClientModInitializer {
         clipboardText = clipboardText.replace("\t","    ");
 
         // Split text into pages
-        List<String> pages = splitTextIntoPages(clipboardText, 256);
+        List<String> pages = splitTextIntoPages(clipboardText);
 
         int slot = context.getSource().getPlayer().getInventory().getSelectedSlot();
         context.getSource().getPlayer().connection.send(
