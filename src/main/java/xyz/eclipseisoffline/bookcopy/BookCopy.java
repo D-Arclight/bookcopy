@@ -103,7 +103,7 @@ public class BookCopy implements ClientModInitializer {
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
         int maxLineWidth = 114;    // pixels per line
-        int maxLinesPerPage = 13;  // vertical lines per page
+        int maxLinesPerPage = 14;  // vertical lines per page
         int maxCharsPerPage = 256; // UTF-16 per-page limit
 
         List<String> pages = new ArrayList<>();
